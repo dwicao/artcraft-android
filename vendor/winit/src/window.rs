@@ -1319,6 +1319,34 @@ impl Window {
             .maybe_queue_on_main(move |w| w.set_ime_purpose(purpose))
     }
 
+    /// Discards the IME composition in progress and resets the input method's state.
+    ///
+    /// Has no effect while IME is not allowed.
+    ///
+    /// ## Platform-specific
+    ///
+    /// - **iOS / Android / Web / Orbital:** Unsupported.
+    ///
+    /// [`Ime::Preedit`]: crate::event::Ime::Preedit
+    /// [`Ime::Commit`]: crate::event::Ime::Commit
+    #[inline]
+    pub fn reset_ime(&self) {
+        let _span = tracing::debug_span!("winit::Window::reset_ime").entered();
+        self.window.maybe_queue_on_main(|w| w.reset_ime())
+    }
+
+    /// Resets composition like [`Self::reset_ime`] and queues an ordered completion fence.
+    ///
+    /// A supported, allowed context that resets successfully receives
+    /// [`ImeResetCompleted`](crate::event::WindowEvent::ImeResetCompleted) with this
+    /// `request_id`, including when no preedit is visible. Unsupported platforms, an IME
+    /// that is not allowed, and native reset failures do not produce a successful completion.
+    #[inline]
+    pub fn reset_ime_with_request(&self, request_id: u64) {
+        let _span = tracing::debug_span!("winit::Window::reset_ime_with_request").entered();
+        self.window.maybe_queue_on_main(move |w| w.reset_ime_with_request(request_id))
+    }
+
     /// Brings the window to the front and sets input focus. Has no effect if the window is
     /// already in focus, minimized, or not visible.
     ///

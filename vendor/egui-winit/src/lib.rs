@@ -551,6 +551,7 @@ impl State {
             // Things we completely ignore:
             WindowEvent::ActivationTokenDone { .. }
             | WindowEvent::AxisMotion { .. }
+            | WindowEvent::ImeResetCompleted { .. }
             | WindowEvent::DoubleTapGesture { .. } => EventResponse {
                 repaint: false,
                 consumed: false,
