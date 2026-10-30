@@ -940,7 +940,7 @@ impl<T: 'static> EventLoop<T> {
                     // twice.
                     MotionAction::Scroll if pointer_class => {
                         let pointer = motion_event.pointers().next();
-                        let (mut vertical, mut horizontal) = pointer
+                        let (mut vertical, horizontal) = pointer
                             .as_ref()
                             .map(|pointer| {
                                 (

@@ -3906,6 +3906,13 @@ if entry not in s:
     p.write_text(s)
 PY
 
+# The Storytold apps moved to storytold egui 0.37, whose egui-winit expects the IME-reset fence
+# APIs from the storytold winit fork; an app source that ships its own vendor/winit snapshot
+# keeps that stale copy (only the Android backend above is refreshed), so port the two APIs
+# into whichever copy is about to compile. Guarded and idempotent; no-ops once upstream
+# grows the APIs. Mirrors lib/scrolling.sh usage above.
+bash "$ROOT/lib/winit_ime_fence.sh" "$SRC" "$APP" "$TITLE"
+
 # egui-wgpu's lost-surface recovery kept the old surface alive while it created the new one: the
 # old `SurfaceState` owns the old `wgpu::Surface`, and it lived until the end of the function, so
 # the new surface was created for a window that still had the old one. Android's Vulkan refuses
