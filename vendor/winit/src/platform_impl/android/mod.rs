@@ -320,8 +320,11 @@ impl<T: 'static> EventLoop<T> {
         // Enable the scroll axes for the GameActivity backend: unlike the
         // NativeActivity InputQueue, GameActivity only fills `axisValues` for
         // axes enabled here (X and Y by default), so the mouse wheel reads 0.
+        // `Scroll` is the fallback some mice/DeX docks report the wheel on
+        // instead of `Vscroll`/`Hscroll`.
         android_app.enable_motion_axis(Axis::Vscroll);
         android_app.enable_motion_axis(Axis::Hscroll);
+        android_app.enable_motion_axis(Axis::Scroll);
         let redraw_flag = SharedFlag::new();
 
         Ok(Self {
@@ -802,6 +805,21 @@ impl<T: 'static> EventLoop<T> {
                                     self.pad_position = Some(current);
                                     if delta.x != 0.0 || delta.y != 0.0 {
                                         trace!("Trackpad scroll {device_id:?} {delta:?}");
+                                        // Report the cursor position first: PdfCraft
+                                        // (and egui's own scroll areas) only take
+                                        // wheel motion while the pointer is over
+                                        // the view, so a wheel without a fresh
+                                        // position is dropped.
+                                        callback(
+                                            event::Event::WindowEvent {
+                                                window_id,
+                                                event: event::WindowEvent::CursorMoved {
+                                                    device_id,
+                                                    position: current,
+                                                },
+                                            },
+                                            self.window_target(),
+                                        );
                                         callback(
                                             event::Event::WindowEvent {
                                                 window_id,
@@ -921,9 +939,9 @@ impl<T: 'static> EventLoop<T> {
                     // on after the wheel had stopped — a scroll that felt like it happened
                     // twice.
                     MotionAction::Scroll if pointer_class => {
-                        let (vertical, horizontal) = motion_event
-                            .pointers()
-                            .next()
+                        let pointer = motion_event.pointers().next();
+                        let (mut vertical, mut horizontal) = pointer
+                            .as_ref()
                             .map(|pointer| {
                                 (
                                     pointer.axis_value(Axis::Vscroll),
@@ -931,6 +949,17 @@ impl<T: 'static> EventLoop<T> {
                                 )
                             })
                             .unwrap_or((0.0, 0.0));
+                        // Some mice and docks (notably in Samsung DeX) report
+                        // the wheel on the generic `SCROLL` axis instead of
+                        // `VSCROLL`/`HSCROLL`: treat it as vertical motion.
+                        if vertical == 0.0 && horizontal == 0.0 {
+                            if let Some(pointer) = pointer.as_ref() {
+                                let generic = pointer.axis_value(Axis::Scroll);
+                                if generic != 0.0 {
+                                    vertical = generic;
+                                }
+                            }
+                        }
                         if vertical != 0.0 || horizontal != 0.0 {
                             let delta = if touchpad {
                                 event::MouseScrollDelta::PixelDelta(PhysicalPosition {
@@ -941,6 +970,27 @@ impl<T: 'static> EventLoop<T> {
                                 event::MouseScrollDelta::LineDelta(horizontal, vertical)
                             };
                             trace!("Scroll {device_id:?} {delta:?}");
+                            // Report the cursor position first so the app has a
+                            // valid pointer to interpret the wheel against:
+                            // PdfCraft (and egui's own scroll areas) only take
+                            // wheel motion while the pointer is over the view,
+                            // so a wheel without a fresh position — a mouse
+                            // that has not moved since the last touch, as in
+                            // Samsung DeX — is dropped and the page never
+                            // scrolls. Mirrors the button arm below.
+                            if let Some(pointer) = pointer.as_ref() {
+                                let position = pointer_position(pointer);
+                                callback(
+                                    event::Event::WindowEvent {
+                                        window_id,
+                                        event: event::WindowEvent::CursorMoved {
+                                            device_id,
+                                            position,
+                                        },
+                                    },
+                                    self.window_target(),
+                                );
+                            }
                             callback(
                                 event::Event::WindowEvent {
                                     window_id,
