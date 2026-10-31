@@ -2006,7 +2006,8 @@ else:
 # (`pick_save(&str, &str)`, `pick_folder(&str)`, `Option<String>` answers) to paths
 # (`pick_save(&str, &Path)`, `pick_folder(&Path)`, `Option<PathBuf>` answers). Write the
 # closures — and the answer conversion — in whichever shape the checked-out source declares.
-if saf and app == "soundcraft" and "Fn(&Path)" in ui_text:
+# (`saf` is not defined yet at this point, so address the recipe table directly.)
+if app == "soundcraft" and "soundcraft" in SAF_RECIPES and "Fn(&Path)" in ui_text:
     SAF_RECIPES["soundcraft"]["services"] = '''
 fn saf_services(bridge: saf::Bridge, state: Arc<SafState>, _inbox: SafInbox) -> Services {
     let open_bridge = bridge.clone_ref();
