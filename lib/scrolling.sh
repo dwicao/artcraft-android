@@ -359,6 +359,36 @@ if app == "wordcraft":
     ):
         fixed.append("crates/ui-egui/src/lib.rs (the keyboard-hide request)")
 
+    # The struct gained a field, so every exhaustive use must name it. Newer sources
+    # destructure `WordApp` in `window_ui.rs` and build it in `app.rs` without a wildcard:
+    # teach both sites the field, unless the source already knows it.
+    window_ui = src / "crates/ui-egui/src/window_ui.rs"
+    try:
+        window_ui_text = window_ui.read_text()
+    except OSError:
+        window_ui_text = ""
+    if "request_ime_hide" not in window_ui_text and fix(
+        "crates/ui-egui/src/window_ui.rs",
+        "            shown_document,\n"
+        "        } = self;\n",
+        "            shown_document,\n"
+        "            request_ime_hide: _, // builder keyboard-hide flag (see scrolling.sh)\n"
+        "        } = self;\n",
+    ):
+        fixed.append("crates/ui-egui/src/window_ui.rs (the keyboard-hide flag is not selected)")
+    app_rs = src / "crates/ui-egui/src/app.rs"
+    try:
+        app_rs_text = app_rs.read_text()
+    except OSError:
+        app_rs_text = ""
+    if "request_ime_hide" not in app_rs_text and fix(
+        "crates/ui-egui/src/app.rs",
+        "            synthetic_pending: false,\n",
+        "            synthetic_pending: false,\n"
+        "            request_ime_hide: false, // builder keyboard-hide flag (see scrolling.sh)\n",
+    ):
+        fixed.append("crates/ui-egui/src/app.rs (the keyboard-hide flag, at rest)")
+
     if fix(
         "crates/ui-egui/src/lib.rs",
         "            comment_drafts: Default::default(),\n",

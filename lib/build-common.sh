@@ -1323,6 +1323,7 @@ fn saf_services(bridge: saf::Bridge, state: Arc<SafState>, inbox: SafInbox) -> S
             let _ = tx.send(vec![gridcraft_ui_egui::printing::Printer {
                 name: "Android print system".to_owned(),
                 default: true,
+                ..Default::default()
             }]);
             rx
         })),
@@ -2001,6 +2002,26 @@ else:
         .replace("PICK_CANCELLED", "Ok(Vec::new())")
     )
 
+# SoundCraft's `Services` picker closures changed upstream from stringly names
+# (`pick_save(&str, &str)`, `pick_folder(&str)`, `Option<String>` answers) to paths
+# (`pick_save(&str, &Path)`, `pick_folder(&Path)`, `Option<PathBuf>` answers). Write the
+# closures — and the answer conversion — in whichever shape the checked-out source declares.
+if saf and app == "soundcraft" and "Fn(&Path)" in ui_text:
+    SAF_RECIPES["soundcraft"]["services"] = '''
+fn saf_services(bridge: saf::Bridge, state: Arc<SafState>, _inbox: SafInbox) -> Services {
+    let open_bridge = bridge.clone_ref();
+    let open_state = Arc::clone(&state);
+    let save_bridge = bridge.clone_ref();
+    let save_state = Arc::clone(&state);
+    let folder_bridge = bridge.clone_ref();
+    let folder_state = Arc::clone(&state);
+    Services {
+        pick_open: Some(Box::new(move |_title: &str, _exts: &[&str]| saf_open_paths(&open_bridge, &open_state).into_iter().next().map(std::path::PathBuf::from))),
+        pick_save: Some(Box::new(move |name: &str, _start: &std::path::Path| saf_save_path(&save_bridge, &save_state, name).map(std::path::PathBuf::from))),
+        pick_folder: Some(Box::new(move |_start: &std::path::Path| saf_folder_path(&folder_bridge, &folder_state).map(std::path::PathBuf::from))),
+    }
+}'''
+
 # How the launcher opens a document the system handed it (an ACTION_VIEW/ACTION_SEND intent it is
 # registered for), once per staged file. Each entry is the body of the shell's `open_incoming`, so it
 # can use `self.inner`, `self.saf_inbox` and the `saf` bridge helpers. Apps with an import inbox
@@ -2048,6 +2069,12 @@ INTENT_OPEN = {
     "figcraft": '''        let _ = self.inner.run("file.open", serde_json::json!({ "path": path }));
 ''',
 }
+
+# CADCraft's `CadApp::open_path` changed upstream from `&str` to `&Path`. Convert the staged
+# working-copy path in whichever shape the checked-out source declares.
+if re.search(r"fn open_path\([^)]*path:\s*&Path", ui_text):
+    INTENT_OPEN["cadcraft"] = '''        self.inner.open_path(std::path::Path::new(path));
+'''
 saf = SAF_RECIPES.get(app)
 
 stem = app[:-len("craft")] if app.endswith("craft") else app
@@ -2602,7 +2629,10 @@ else:
 # A type that does not implement `eframe::App` is an inner app state; its desktop `main.rs` wraps it
 # in a tiny struct that forwards `logic`/`ui`. Emit the same wrapper here.
 has_eframe_app = bool(re.search(r"impl\s+eframe::App\s+for\s+" + re.escape(app_type) + r"\b", ui_text))
-has_raw_hook = bool(re.search(r"pub fn raw_input_hook\b", ui_text))
+has_raw_hook = bool(_raw_hook_match := re.search(r"pub fn raw_input_hook\s*\(([^)]*)\)", ui_text))
+# Newer sources thread the context through (`ctx: &Context, raw: &mut RawInput`); older ones
+# take only `raw`. Call it the way the checked-out source declares it.
+raw_hook_takes_ctx = bool(_raw_hook_match and "Context" in _raw_hook_match.group(1))
 # A close guard: the app's own "may I close?" check. The desktop runs it when its window closes,
 # so a document with unsaved changes asks first ("Do you want to quit without saving unsaved
 # changes?"); the Android back button runs the very same check, so the app's own prompt appears
@@ -2618,7 +2648,7 @@ if not re.search(r"\bServices\b|\bNoServices\b", construct) and "Services" not i
 # Option on older ones. The recipe is written in the sync form, so rewrite it — and import the
 # future type — to whatever the checked-out trait declares; otherwise a regenerated launcher
 # cannot compile against the source it was generated from.
-if saf and app == "figcraft" and re.search(r"fn pick_open\([^)]*\)\s*->\s*DialogFuture", ui_root):
+if saf and app == "figcraft" and re.search(r"fn pick_open\([^)]*\)\s*->\s*DialogFuture", ui_text):
     saf["imports"] += f"\nuse {ui_ident}::DialogFuture;"
     saf["services"] = re.sub(
         r"(fn pick_\w+\([^)]*\)) -> Option<[^>]*> \{\n(\s+)(.*?)\n\s*\}",
@@ -2849,7 +2879,11 @@ icon = "@mipmap/ic_launcher"
         inner_logic = "let _ = frame;\n        self.inner.logic(ctx);"
         inner_ui = "let _ = frame;\n        self.inner.ui(ui);"
         if has_raw_hook:
-            inner_hook = "let _ = ctx;\n        self.inner.raw_input_hook(raw);"
+            inner_hook = (
+                "self.inner.raw_input_hook(ctx, raw);"
+                if raw_hook_takes_ctx
+                else "let _ = ctx;\n        self.inner.raw_input_hook(raw);"
+            )
         else:
             inner_hook = "let _ = (ctx, raw);"
 
