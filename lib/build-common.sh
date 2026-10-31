@@ -1561,6 +1561,7 @@ fn saf_services(bridge: saf::Bridge, state: Arc<SafState>, inbox: SafInbox) -> S
             let _ = tx.send(vec![wordcraft_ui_egui::printing::Printer {
                 name: "Android print system".to_owned(),
                 default: true,
+                ..Default::default()
             }]);
             rx
         })),
@@ -2887,6 +2888,13 @@ icon = "@mipmap/ic_launcher"
             )
         else:
             inner_hook = "let _ = (ctx, raw);"
+
+    # FigCraft's inner app lost its `logic` method upstream: the desktop `App` wrapper in
+    # apps/figcraft now owns the eframe callbacks and drives `FigApp` through
+    # `windows::guard` + `background_tick`. Drive it the same way when the checked-out
+    # source looks like that; older sources keep the direct call above.
+    if app == "figcraft" and re.search(r"fn background_tick\(&mut self,\s*ctx", ui_text):
+        inner_logic = f"let _ = frame;\n        {ui_ident}::windows::guard(&mut self.inner, ctx, |fig| fig.background_tick(ctx));"
 
     # The Android back button asks the app before it leaves, so an app with unsaved work opens
     # its own "quit without saving?" prompt instead of the app disappearing. The check is the
